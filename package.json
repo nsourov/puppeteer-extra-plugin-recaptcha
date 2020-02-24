@@ -47,6 +47,7 @@
     "puppeteer-extra",
     "puppeteer-extra-plugin",
     "recaptcha",
+    "invisible",
     "captcha",
     "2captcha"
   ],
