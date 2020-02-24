@@ -24,7 +24,7 @@
     "test": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ava -v src/**.test.ts",
     "test-ci": "yarn build && TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ava -v dist/*.test.js",
     "prepublishOnly": "npm run test && npm run docs && npm run build",
-    "install": "npm run build"
+    "prepare": "npm run build"
   },
   "engines": {
     "node": ">=9.11.2"
