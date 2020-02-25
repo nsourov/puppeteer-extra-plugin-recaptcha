@@ -19,7 +19,8 @@
     "clean": "rm -rf dist/*",
     "tscheck": "tsc --pretty --noEmit",
     "build": "yarn clean && tsc --module commonjs && rollup -c rollup.config.ts",
-    "test": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ava -v src/**.test.ts"
+    "test": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ava -v src/**.test.ts",
+    "prepublishOnly": "npm run test && npm run docs && npm run build"
   },
   "engines": {
     "node": ">=9.11.2"
