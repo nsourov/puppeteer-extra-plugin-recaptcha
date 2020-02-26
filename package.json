@@ -18,8 +18,11 @@
   "scripts": {
     "clean": "rm -rf dist/*",
     "tscheck": "tsc --pretty --noEmit",
-    "build": "yarn clean && tsc --module commonjs && rollup -c rollup.config.ts",
+    "build": "yarn clean && tsc --module commonjs && rollup -c rollup.config.ts && yarn ambient-dts",
     "test": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"commonjs\"}' ava -v src/**.test.ts",
+    "ambient-dts": "yarn ambient-dts-copy && yarn ambient-dts-fix-path",
+    "ambient-dts-copy": "copyfiles -u 1 \"src/**/*.d.ts\" dist",
+    "ambient-dts-fix-path": "replace-in-files --string='/// <reference path=\"../src/' --replacement='/// <reference path=\"../dist/' 'dist/**/*.d.ts'",
     "prepublishOnly": "npm run build"
   },
   "engines": {

@@ -5,13 +5,14 @@
     "module": "es2015",
     "moduleResolution": "node",
     "lib": ["es2015", "es2016", "es2017", "dom"],
+    // "noResolve": true, // Important: Otherwise TS would rewrite our ambient d.ts file locations (see: yarn copy-dts) :(
     "sourceMap": true,
     "declaration": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
-    "strict": true,
+    "strict": false,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": false,
     "noUnusedLocals": true,
@@ -22,8 +23,10 @@
   "include": [
     "./src/**/*.tsx",
     "./src/**/*.ts",
+    "./src/**/*.d.ts",
     "./src/**/*.test.ts",
-    "./test/**/*.ts"
+    "./test/**/*.ts",
+    "src/provider/2captcha-api.js"
   ],
   "exclude": ["node_modules", "dist", "./test/**/*.spec.ts"]
 }
