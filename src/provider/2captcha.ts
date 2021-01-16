@@ -20,6 +20,8 @@ async function decodeRecaptchaAsync(
   token: string,
   sitekey: string,
   url: string,
+  cookies: string,
+  proxy: string,
   opts = { pollingInterval: 2000 }
 ): Promise<DecodeRecaptchaAsyncResult> {
   return new Promise(resolve => {
@@ -27,7 +29,7 @@ async function decodeRecaptchaAsync(
       resolve({ err, result, invalid })
     try {
       solver.setApiKey(token)
-      solver.decodeReCaptcha(sitekey, url, opts, cb)
+      solver.decodeReCaptcha(sitekey, url, cookies, proxy, opts, cb)
     } catch (error) {
       return resolve({ err: error })
     }
@@ -36,17 +38,21 @@ async function decodeRecaptchaAsync(
 
 export async function getSolutions(
   captchas: types.CaptchaInfo[] = [],
-  token?: string
+  token?: string,
+  cookies?: string,
+  proxy?: string,
 ): Promise<types.GetSolutionsResult> {
   const solutions = await Promise.all(
-    captchas.map(c => getSolution(c, token || ''))
+    captchas.map(c => getSolution(c, token || '', cookies, proxy))
   )
   return { solutions, error: solutions.find(s => !!s.error) }
 }
 
 async function getSolution(
   captcha: types.CaptchaInfo,
-  token: string
+  token: string,
+  cookies: string,
+  proxy: string,
 ): Promise<types.CaptchaSolution> {
   const solution: types.CaptchaSolution = {
     provider: PROVIDER_ID
@@ -61,7 +67,9 @@ async function getSolution(
     const { err, result, invalid } = await decodeRecaptchaAsync(
       token,
       captcha.sitekey,
-      captcha.url
+      captcha.url,
+      cookies,
+      proxy,
     )
     debug('Got response', { err, result, invalid })
     if (err) throw new Error(`${PROVIDER_ID} error: ${err}`)

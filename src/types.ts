@@ -96,6 +96,7 @@ export interface PluginOptions {
   visualFeedback: boolean
   throwOnError: boolean
   provider?: SolutionProvider
+  proxy?: string
 }
 
 export interface ContentScriptOpts {

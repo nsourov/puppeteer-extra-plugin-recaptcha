@@ -10,8 +10,8 @@ import * as TwoCaptcha from './provider/2captcha'
 export const BuiltinSolutionProviders: types.SolutionProvider[] = [
   {
     id: TwoCaptcha.PROVIDER_ID,
-    fn: TwoCaptcha.getSolutions
-  }
+    fn: TwoCaptcha.getSolutions,
+  },
 ]
 
 /**
@@ -31,14 +31,14 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
   get defaults(): types.PluginOptions {
     return {
       visualFeedback: true,
-      throwOnError: false
+      throwOnError: false,
     }
   }
 
   get contentScriptOpts(): types.ContentScriptOpts {
     const { visualFeedback } = this.opts
     return {
-      visualFeedback
+      visualFeedback,
     }
   }
 
@@ -91,7 +91,8 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
 
   async getRecaptchaSolutions(
     captchas: types.CaptchaInfo[],
-    provider?: types.SolutionProvider
+    provider?: types.SolutionProvider,
+    cookies?: string
   ) {
     this.debug('getRecaptchaSolutions')
     provider = provider || this.opts.provider
@@ -105,7 +106,7 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     let fn = provider.fn
     if (!fn) {
       const builtinProvider = BuiltinSolutionProviders.find(
-        p => p.id === (provider || {}).id
+        (p) => p.id === (provider || {}).id
       )
       if (!builtinProvider || !builtinProvider.fn) {
         throw new Error(
@@ -114,7 +115,7 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
       }
       fn = builtinProvider.fn
     }
-    const response = await fn.call(this, captchas, provider.token)
+    const response = await fn.call(this, captchas, provider.token, cookies, this.opts.proxy)
     response.error =
       response.error ||
       response.solutions.find((s: types.CaptchaSolution) => !!s.error)
@@ -138,16 +139,35 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     this.debug('enterRecaptchaSolutions')
     const evaluateReturn = await page.evaluate(
       this._generateContentScript('enterRecaptchaSolutions', {
-        solutions
+        solutions,
       })
     )
     const response: types.EnterRecaptchaSolutionsResult = evaluateReturn as any
-    response.error = response.error || response.solved.find(s => !!s.error)
+    response.error = response.error || response.solved.find((s) => !!s.error)
     this.debug('enterRecaptchaSolutions', response)
     if (this.opts.throwOnError && response.error) {
       throw new Error(response.error)
     }
     return response
+  }
+
+  formatCookies(cookies) {
+    return cookies.map((cookie) => `${cookie.name}:${cookie.value}`).join(';')
+  }
+
+  async getGoogleCookies(page) {
+    if (page.browser) {
+      const browser = await page.browser()
+      const newPage = await browser.newPage()
+      await newPage.goto('https://google.com', { waitUntil: 'networkidle2' })
+      const cookies = await newPage.cookies()
+      await page.bringToFront()
+      const googleCookies = cookies.filter(
+        (c) => !!c.domain.includes('google.com')
+      )
+      await page.waitFor(2000)
+      return this.formatCookies(googleCookies)
+    }
   }
 
   async solveRecaptchas(
@@ -158,7 +178,7 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
       captchas: [],
       solutions: [],
       solved: [],
-      error: null
+      error: null,
     }
     try {
       // If `this.opts.throwOnError` is set any of the
@@ -167,15 +187,17 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
       response.captchas = captchas
 
       if (captchas.length) {
+        // get cookies from google.com
+        const cookies = await this.getGoogleCookies(page)
         const {
           solutions,
-          error: solutionsError
-        } = await this.getRecaptchaSolutions(response.captchas)
+          error: solutionsError,
+        } = await this.getRecaptchaSolutions(response.captchas, null, cookies)
         response.solutions = solutions
 
         const {
           solved,
-          error: solvedError
+          error: solvedError,
         } = await this.enterRecaptchaSolutions(page, response.solutions)
         response.solved = solved
 
@@ -212,7 +234,7 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     this._addCustomMethods(page)
 
     // Add custom methods to potential frames as well
-    page.on('frameattached', frame => {
+    page.on('frameattached', (frame) => {
       if (!frame) return
       this._addCustomMethods(frame)
     })
