@@ -53,13 +53,16 @@ export type SolveRecaptchasResult = FindRecaptchasResult &
   EnterRecaptchaSolutionsResult &
   GetSolutionsResult
 
+export type CaptchaVendor = 'recaptcha' | 'hcaptcha'
+
 export interface CaptchaInfo {
+  _vendor: CaptchaVendor
   id?: string // captcha id
   widgetId?: number
   sitekey?: string
+  s?: string // new google site specific property
   callback?: string | Function
   hasResponseElement?: boolean
-  responseElementContent?: string
   url?: string
   display?: {
     size?: string
@@ -72,6 +75,7 @@ export interface CaptchaInfo {
 }
 
 export interface CaptchaSolution {
+  _vendor: CaptchaVendor
   id?: string // captcha id
   provider?: string
   providerCaptchaId?: string
@@ -84,6 +88,7 @@ export interface CaptchaSolution {
 }
 
 export interface CaptchaSolved {
+  _vendor: CaptchaVendor
   id?: string // captcha id
   responseElement?: boolean
   responseCallback?: boolean
@@ -96,7 +101,6 @@ export interface PluginOptions {
   visualFeedback: boolean
   throwOnError: boolean
   provider?: SolutionProvider
-  proxy?: string
 }
 
 export interface ContentScriptOpts {

@@ -5,6 +5,7 @@ import { Browser, Frame, Page } from 'puppeteer'
 import * as types from './types'
 
 import { RecaptchaContentScript } from './content'
+import { HcaptchaContentScript } from './content-hcaptcha'
 import * as TwoCaptcha from './provider/2captcha'
 
 export const BuiltinSolutionProviders: types.SolutionProvider[] = [
@@ -43,16 +44,23 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
   }
 
   private _generateContentScript(
+    vendor: types.CaptchaVendor,
     fn: 'findRecaptchas' | 'enterRecaptchaSolutions',
     data?: any
   ) {
-    this.debug('_generateContentScript', fn, data)
+    this.debug('_generateContentScript', vendor, fn, data)
+    let scriptSource = RecaptchaContentScript.toString()
+    let scriptName = 'RecaptchaContentScript'
+    if (vendor === 'hcaptcha') {
+      scriptSource = HcaptchaContentScript.toString()
+      scriptName = 'HcaptchaContentScript'
+    }
     return `(async() => {
       const DATA = ${JSON.stringify(data || null)}
       const OPTS = ${JSON.stringify(this.contentScriptOpts)}
 
-      ${RecaptchaContentScript.toString()}
-      const script = new RecaptchaContentScript(OPTS, DATA)
+      ${scriptSource}
+      const script = new ${scriptName}(OPTS, DATA)
       return script.${fn}()
     })()`
   }
@@ -62,7 +70,7 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     // As this might be called very early while recaptcha is still loading
     // we add some extra waiting logic for developer convenience.
     const hasRecaptchaScriptTag = await page.$(
-      `script[src^="https://www.google.com/recaptcha/api.js"]`
+      `script[src*="/recaptcha/api.js"]`
     )
     this.debug('hasRecaptchaScriptTag', !!hasRecaptchaScriptTag)
     if (hasRecaptchaScriptTag) {
@@ -77,11 +85,34 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
       )
       this.debug('waitForRecaptchaClient - end', new Date()) // used as timer
     }
-    // Even without a recaptcha script tag we're trying, just in case.
-    const evaluateReturn = await page.evaluate(
-      this._generateContentScript('findRecaptchas')
+    const hasHcaptchaScriptTag = await page.$(
+      `script[src*="//hcaptcha.com/1/api.js"]`
     )
-    const response: types.FindRecaptchasResult = evaluateReturn as any
+    this.debug('hasHcaptchaScriptTag', !!hasHcaptchaScriptTag)
+    if (hasHcaptchaScriptTag) {
+      this.debug('wait:hasHcaptchaScriptTag - start', new Date())
+      await page.waitForFunction(
+        `
+        (function() {
+          return window.hcaptcha
+        })()
+      `,
+        { polling: 200, timeout: 10 * 1000 }
+      )
+      this.debug('wait:hasHcaptchaScriptTag - end', new Date()) // used as timer
+    }
+    // Even without a recaptcha script tag we're trying, just in case.
+    const resultRecaptcha: types.FindRecaptchasResult = (await page.evaluate(
+      this._generateContentScript('recaptcha', 'findRecaptchas')
+    )) as any
+    const resultHcaptcha: types.FindRecaptchasResult = (await page.evaluate(
+      this._generateContentScript('hcaptcha', 'findRecaptchas')
+    )) as any
+
+    const response: types.FindRecaptchasResult = {
+      captchas: [...resultRecaptcha.captchas, ...resultHcaptcha.captchas],
+      error: resultRecaptcha.error || resultHcaptcha.error,
+    }
     this.debug('findRecaptchas', response)
     if (this.opts.throwOnError && response.error) {
       throw new Error(response.error)
@@ -103,7 +134,7 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     ) {
       throw new Error('Please provide a solution provider to the plugin.')
     }
-    let fn = provider.fn
+    let { fn } = provider
     if (!fn) {
       const builtinProvider = BuiltinSolutionProviders.find(
         (p) => p.id === (provider || {}).id
@@ -115,7 +146,13 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
       }
       fn = builtinProvider.fn
     }
-    const response = await fn.call(this, captchas, provider.token, cookies, this.opts.proxy)
+    const response = await fn.call(
+      this,
+      captchas,
+      provider.token,
+      cookies,
+      this.opts.proxy
+    )
     response.error =
       response.error ||
       response.solutions.find((s: types.CaptchaSolution) => !!s.error)
@@ -136,13 +173,29 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
     page: Page | Frame,
     solutions: types.CaptchaSolution[]
   ) {
-    this.debug('enterRecaptchaSolutions')
-    const evaluateReturn = await page.evaluate(
-      this._generateContentScript('enterRecaptchaSolutions', {
-        solutions,
-      })
-    )
-    const response: types.EnterRecaptchaSolutionsResult = evaluateReturn as any
+    this.debug('enterRecaptchaSolutions', { solutions })
+
+    const hasRecaptcha = !!solutions.find((s) => s._vendor === 'recaptcha')
+    const solvedRecaptcha: types.EnterRecaptchaSolutionsResult = hasRecaptcha
+      ? ((await page.evaluate(
+          this._generateContentScript('recaptcha', 'enterRecaptchaSolutions', {
+            solutions,
+          })
+        )) as any)
+      : { solved: [] }
+    const hasHcaptcha = !!solutions.find((s) => s._vendor === 'hcaptcha')
+    const solvedHcaptcha: types.EnterRecaptchaSolutionsResult = hasHcaptcha
+      ? ((await page.evaluate(
+          this._generateContentScript('hcaptcha', 'enterRecaptchaSolutions', {
+            solutions,
+          })
+        )) as any)
+      : { solved: [] }
+
+    const response: types.EnterRecaptchaSolutionsResult = {
+      solved: [...solvedRecaptcha.solved, ...solvedHcaptcha.solved],
+      error: solvedRecaptcha.error || solvedHcaptcha.error,
+    }
     response.error = response.error || response.solved.find((s) => !!s.error)
     this.debug('enterRecaptchaSolutions', response)
     if (this.opts.throwOnError && response.error) {
@@ -165,7 +218,6 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
       const googleCookies = cookies.filter(
         (c) => !!c.domain.includes('google.com')
       )
-      await page.waitFor(2000)
       return this.formatCookies(googleCookies)
     }
   }
@@ -185,20 +237,19 @@ export class PuppeteerExtraPluginRecaptcha extends PuppeteerExtraPlugin {
       // following will throw and abort execution.
       const { captchas, error: captchasError } = await this.findRecaptchas(page)
       response.captchas = captchas
-
       if (captchas.length) {
-        // get cookies from google.com
-        const cookies = await this.getGoogleCookies(page)
-        const {
-          solutions,
-          error: solutionsError,
-        } = await this.getRecaptchaSolutions(response.captchas, null, cookies)
+        let cookies = ''
+        if (captchas.find((c) => c._vendor === 'recaptcha')) {
+          // get cookies from google.com
+          cookies = await this.getGoogleCookies(page)
+        }
+
+        const { solutions, error: solutionsError } =
+          await this.getRecaptchaSolutions(response.captchas, null, cookies)
         response.solutions = solutions
 
-        const {
-          solved,
-          error: solvedError,
-        } = await this.enterRecaptchaSolutions(page, response.solutions)
+        const { solved, error: solvedError } =
+          await this.enterRecaptchaSolutions(page, response.solutions)
         response.solved = solved
 
         response.error = captchasError || solutionsError || solvedError
